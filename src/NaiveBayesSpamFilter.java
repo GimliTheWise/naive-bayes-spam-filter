@@ -6,12 +6,12 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 
-public class Main {
+public class NaiveBayesSpamFilter {
     private static Map<String, Double> anl_occurrences_ham;
     private static Map<String, Double> anl_occurrences_spam;
-    private static final double ALPHA = 0.1;
+    private static final double ALPHA = 0.06;
     private static final double THRESHOLD = 0.95;
-    private static final String DATASET = "kallibrierung"; //kallibrierung or test
+    private static final String DATASET = "test"; //kallibrierung or test
     private static final String DEFAULT_PATH = "./resources/";
 
 
@@ -38,6 +38,7 @@ public class Main {
 
         System.out.println("Threshold for spam classification set at: " + THRESHOLD * 100 + "%");
         System.out.println("calculating spam probabilities on " + DATASET + " dataset...");
+        System.out.println();
 
         Map<String, Double> classifiedMails = classifyMails(spam_test_mails);
         double correct_class = classifiedMails.values().stream().filter(aDouble -> aDouble >= THRESHOLD).count();
@@ -49,6 +50,13 @@ public class Main {
         System.out.printf("Correct ham classification ratio: %.2f%%", (correct_class / classifiedMails.size()) * 100);
     }
 
+
+    /**
+     * classify the spam probability for each mail based on the containing words.
+     * @param mails as a list of files
+     * @return a dictionary of mail name mapped to its probability of being spam
+     * @throws FileNotFoundException if mail path is wrong
+     */
     private static Map<String, Double> classifyMails(List<File> mails) throws FileNotFoundException {
         Map<String, Double> classifiedMails = new HashMap<>();
         for (File mail :
@@ -60,12 +68,25 @@ public class Main {
         return classifiedMails;
     }
 
+    /**
+     * gets all mails as files from a location on the file system
+     * @param path to the mails
+     * @return a list of files
+     * @throws IOException if mail path is wrong
+     */
     static List<File> getMails(Path path) throws IOException {
         return Files.walk(path)
                 .filter(Files::isRegularFile)
                 .map(Path::toFile).toList();
     }
 
+
+    /**
+     * counts how many times words occur in all mails
+     * @param mails to search in
+     * @return a dictionary of words with their occurrences in the mails
+     * @throws FileNotFoundException if mail path is wrong
+     */
     static Map<String, Double> wordOccurrenceCounter(List<File> mails) throws FileNotFoundException {
         Map<String, Double> word_occurrences = new HashMap<>();
         Scanner mailReader;
@@ -87,6 +108,12 @@ public class Main {
         return word_occurrences;
     }
 
+    /**
+     * go threw the mail and find all the words by splitting the string by spaces
+     * @param mail to find words in
+     * @return a list of words as strings
+     * @throws FileNotFoundException if path is incorrect
+     */
     static List<String> mailWords(File mail) throws FileNotFoundException {
         Scanner mailReader;
         List<String> words = new ArrayList<>();
@@ -100,25 +127,34 @@ public class Main {
     }
 
     /**
-     * Calculates the probability of a mail being spam given its containing words
-      * @param words of a mail
+     * Calculates the probability of a mail being spam given its containing words.
+     * The formula used is not biased and taken from here:
+     * <a href="https://www.math.kit.edu/ianm4/~ritterbusch/seite/spam/de">...</a>
+     * @param words of a mail as a list of strings
      * @return a double between 0 and 1
      */
     static double spaminess(List<String> words) {
-        double Pr_W_given_that_S = 0.5;
-        double Pr_W_given_that_H = 0.5;
+        double Pr_W_given_that_S = 0.5; // change this to bias the formula
+        double Pr_W_given_that_H = 1-Pr_W_given_that_S;
         double spam_words_sum = anl_occurrences_spam.values().stream().mapToDouble(Double::doubleValue).sum();
         double ham_words_sum = anl_occurrences_ham.values().stream().mapToDouble(Double::doubleValue).sum();
-        int pow_S, pow_H;
-        pow_S = 0;
-        pow_H = 0;
+
+        // saves the times PrWS or PrWH is multiplied with 10 to the power of 100.
+        int pow_S = 0;
+        int pow_H = 0;
         double pow_jump = 100;
+
         for (String word :
                 words) {
+            // only take words into account which are present in the anlern-dataset.
             if (anl_occurrences_spam.containsKey(word) && anl_occurrences_ham.containsKey(word)) {
+
+                // multiply each word probability with each other.
                 Pr_W_given_that_S = Pr_W_given_that_S * (anl_occurrences_spam.get(word) / spam_words_sum);
                 Pr_W_given_that_H = Pr_W_given_that_H * (anl_occurrences_ham.get(word) / ham_words_sum);
 
+                // make sure no underflows occur (numbers getting too small).
+                // if double gets to small multiply it with 10 to the power of 100 and increase the counter.
                 if (Pr_W_given_that_S < Math.pow(10, -pow_jump)) {
                     Pr_W_given_that_S = Pr_W_given_that_S * Math.pow(10, pow_jump);
                     pow_S++;
@@ -129,6 +165,7 @@ public class Main {
                 }
             }
         }
+        // shorten the powers so that the doubles don't get too small
         if (pow_H > pow_S) {
             pow_H = pow_H - pow_S;
             pow_S = 0;
@@ -139,8 +176,12 @@ public class Main {
             pow_S = 0;
             pow_H = 0;
         }
+        // multiply the doubles again
+        // this time with the negative power
         Pr_W_given_that_S = Pr_W_given_that_S * Math.pow(10, -pow_S * pow_jump);
         Pr_W_given_that_H = Pr_W_given_that_H * Math.pow(10, -pow_H * pow_jump);
-        return Pr_W_given_that_S / (Pr_W_given_that_S + Pr_W_given_that_H); // probability of S given that W
+
+        // probability of Spam given the words in the mail
+        return Pr_W_given_that_S / (Pr_W_given_that_S + Pr_W_given_that_H);
     }
 }
