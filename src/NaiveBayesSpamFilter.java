@@ -40,11 +40,13 @@ public class NaiveBayesSpamFilter {
         System.out.println("calculating spam probabilities on " + DATASET + " dataset...");
         System.out.println();
 
+
+        // classify spam dataset
         Map<String, Double> classifiedMails = classifyMails(spam_test_mails);
         double correct_class = classifiedMails.values().stream().filter(aDouble -> aDouble >= THRESHOLD).count();
         System.out.printf("Correct spam classification ratio: %.2f%%", (correct_class / classifiedMails.size()) * 100);
         System.out.println();
-
+        // classify ham dataset
         classifiedMails = classifyMails(ham_test_mails);
         correct_class = classifiedMails.values().stream().filter(aDouble -> aDouble < THRESHOLD).count();
         System.out.printf("Correct ham classification ratio: %.2f%%", (correct_class / classifiedMails.size()) * 100);
